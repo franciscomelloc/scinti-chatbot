@@ -35,7 +35,7 @@ def criar_usuario(whatsapp_id):
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO usuarios (whatsapp_id, etapa, finalizado)
-        VALUES (%s, 'nome', 0)
+        VALUES (%s, 'nome', FALSE)
         ON CONFLICT (whatsapp_id) DO NOTHING
     """, (whatsapp_id,))
     conn.commit()
