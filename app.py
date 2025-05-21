@@ -195,8 +195,10 @@ def whatsapp_webhook():
     Thread(target=processar_mensagem).start()
     return response
 
+# Criação de tabelas deve ocorrer sempre
+criar_tabela()
+criar_tabela_conversas()
+
 if __name__ == "__main__":
-    criar_tabela()
-    criar_tabela_conversas()
     app.run(port=5000)
 
