@@ -1,5 +1,7 @@
 import os
 import sqlite3
+from threading import Thread
+from twilio.rest import Client
 from flask import Flask, request, make_response
 from twilio.twiml.messaging_response import MessagingResponse
 from dotenv import load_dotenv
@@ -30,6 +32,18 @@ mapeamentos = {
         "4": "Prefere não dizer"
     }
 }
+
+def enviar_resposta_twilio(to, mensagem):
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    from_number = os.getenv("TWILIO_WHATSAPP_NUMBER")  # Exemplo: "whatsapp:+14155238886"
+    
+    client = Client(account_sid, auth_token)
+    client.messages.create(
+        body=mensagem,
+        from_=from_number,
+        to=to
+    )
 
 def criar_tabela():
     conn = sqlite3.connect(DB_PATH)
@@ -109,86 +123,72 @@ def gerar_resposta_scinti(pergunta):
 
     return resposta.choices[0].message.content.strip()
 
+
 @app.route("/webhook", methods=["POST"])
 def whatsapp_webhook():
     incoming_msg = request.form.get("Body").strip()
     sender = request.form.get("From")
+
     resp = MessagingResponse()
-
-    if incoming_msg.lower() == "/reset":
-        apagar_usuario(sender)
-        resp.message("Cadastro reiniciado! Qual o seu nome completo?")
-        response = make_response(str(resp))
-        response.headers["Content-Type"] = "application/xml"
-        return response
-
-    if incoming_msg.lower() == "/status":
-        user = obter_usuario(sender)
-        if not user:
-            resp.message("Você ainda não iniciou o cadastro.")
-        else:
-            resp.message(f"Etapa atual: {user['etapa']}")
-        response = make_response(str(resp))
-        response.headers["Content-Type"] = "application/xml"
-        return response
-
-    user = obter_usuario(sender)
-
-    if user and user["finalizado"]:
-        # Se já finalizou o cadastro, responde com a IA
-        resposta_ia = gerar_resposta_scinti(incoming_msg)
-        resp.message(resposta_ia)
-        response = make_response(str(resp))
-        response.headers["Content-Type"] = "application/xml"
-        return response
-
-    if not user:
-        # Se o usuário não existe, cria novo
-        criar_usuario(sender)
-        resp.message("Olá! Vamos começar. Qual o seu nome completo?")
-        response = make_response(str(resp))
-        response.headers["Content-Type"] = "application/xml"
-        return response
-
-    etapa_atual = user["etapa"]
-    for i, (campo, pergunta) in enumerate(etapas):
-        if etapa_atual == campo:
-            resposta = incoming_msg.strip()
-            if campo in mapeamentos:
-                if resposta not in mapeamentos[campo]:
-                    resp.message("Opção inválida. Por favor, envie o número correspondente da lista.")
-                    response = make_response(str(resp))
-                    response.headers["Content-Type"] = "application/xml"
-                    return response
-                valor = mapeamentos[campo][resposta]
-            else:
-                valor = resposta
-
-            atualizar_usuario(sender, campo, valor)
-
-            if i + 1 < len(etapas):
-                proxima_etapa = etapas[i + 1][0]
-                atualizar_usuario(sender, "etapa", proxima_etapa)
-                resp.message(etapas[i + 1][1])
-            else:
-                marcar_finalizado(sender)
-                nome = user["nome"] or "jovem"
-                mensagem_final = (
-                    f"Muito obrigado, {nome}! ✅ Seu cadastro foi finalizado.\n\n"
-                    "👋 Eu sou a *Scinti*, sua assistente virtual de carreira!\n\n"
-                    "Pode me perguntar sobre profissões, mercado de trabalho, cursos técnicos ou superiores, dúvidas sobre futuro profissional e mais.\n\n"
-                    "Estou aqui pra te ajudar no que for possível. É só mandar uma pergunta!"
-                )
-                resp.message(mensagem_final)
-
-            response = make_response(str(resp))
-            response.headers["Content-Type"] = "application/xml"
-            return response
-
-    # fallback
-    resp.message("Algo deu errado. Envie /reset para recomeçar.")
+    resp.message("Recebido! Já estou processando sua resposta 😊")
     response = make_response(str(resp))
     response.headers["Content-Type"] = "application/xml"
+
+    def processar_mensagem():
+        if incoming_msg.lower() == "/reset":
+            apagar_usuario(sender)
+            return
+
+        if incoming_msg.lower() == "/status":
+            user = obter_usuario(sender)
+            # Como já respondemos ao Twilio, apenas log ou log futuro
+            return
+
+        user = obter_usuario(sender)
+
+        if user and user["finalizado"]:
+            resposta_ia = gerar_resposta_scinti(incoming_msg)
+            enviar_resposta_twilio(sender, resposta_ia)
+            return
+
+        if not user:
+            criar_usuario(sender)
+            enviar_resposta_twilio(sender, "Olá! Vamos começar. Qual o seu nome completo?")
+            return
+
+        etapa_atual = user["etapa"]
+        for i, (campo, pergunta) in enumerate(etapas):
+            if etapa_atual == campo:
+                resposta = incoming_msg.strip()
+                if campo in mapeamentos:
+                    if resposta not in mapeamentos[campo]:
+                        enviar_resposta_twilio(sender, "Opção inválida. Por favor, envie o número correspondente da lista.")
+                        return
+                    valor = mapeamentos[campo][resposta]
+                else:
+                    valor = resposta
+
+                atualizar_usuario(sender, campo, valor)
+
+                if i + 1 < len(etapas):
+                    proxima_etapa = etapas[i + 1][0]
+                    atualizar_usuario(sender, "etapa", proxima_etapa)
+                    enviar_resposta_twilio(sender, etapas[i + 1][1])
+                else:
+                    marcar_finalizado(sender)
+                    nome = user["nome"] or "jovem"
+                    mensagem_final = (
+                        f"Muito obrigado, {nome}! ✅ Seu cadastro foi finalizado.\n\n"
+                        "👋 Eu sou a *Scinti*, sua assistente virtual de carreira!\n\n"
+                        "Pode me perguntar sobre profissões, mercado de trabalho, cursos técnicos ou superiores, dúvidas sobre futuro profissional e mais.\n\n"
+                        "Estou aqui pra te ajudar no que for possível. É só mandar uma pergunta!"
+                    )
+                    enviar_resposta_twilio(sender, mensagem_final)
+                return
+
+        enviar_resposta_twilio(sender, "Algo deu errado. Envie /reset para recomeçar.")
+
+    Thread(target=processar_mensagem).start()
     return response
 
 if __name__ == "__main__":
