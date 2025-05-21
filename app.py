@@ -1,5 +1,4 @@
 import os
-import sqlite3
 from threading import Thread
 from twilio.rest import Client
 from flask import Flask, request, make_response
@@ -47,60 +46,6 @@ def enviar_resposta_twilio(to, mensagem):
         to=to
     )
 
-def criar_tabela():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("DROP TABLE IF EXISTS usuarios")
-    cursor.execute("""
-        CREATE TABLE usuarios (
-            id INTEGER PRIMARY KEY,
-            whatsapp_id TEXT UNIQUE,
-            nome TEXT,
-            idade TEXT,
-            genero TEXT,
-            etapa TEXT,
-            finalizado INTEGER DEFAULT 0
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-def obter_usuario(whatsapp_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM usuarios WHERE whatsapp_id = ?", (whatsapp_id,))
-    user = cursor.fetchone()
-    conn.close()
-    return dict(user) if user else None
-
-def criar_usuario(whatsapp_id):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO usuarios (whatsapp_id, etapa, finalizado) VALUES (?, ?, 0)", (whatsapp_id, "nome"))
-    conn.commit()
-    conn.close()
-
-def atualizar_usuario(whatsapp_id, campo, valor):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(f"UPDATE usuarios SET {campo} = ? WHERE whatsapp_id = ?", (valor, whatsapp_id))
-    conn.commit()
-    conn.close()
-
-def marcar_finalizado(whatsapp_id):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE usuarios SET finalizado = 1 WHERE whatsapp_id = ?", (whatsapp_id,))
-    conn.commit()
-    conn.close()
-
-def apagar_usuario(whatsapp_id):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM usuarios WHERE whatsapp_id = ?", (whatsapp_id,))
-    conn.commit()
-    conn.close()
 
 def gerar_resposta_scinti(pergunta, whatsapp_id):
     salvar_mensagem(whatsapp_id, "user", pergunta)
@@ -180,7 +125,7 @@ def whatsapp_webhook():
                     enviar_resposta_twilio(sender, etapas[i + 1][1])
                 else:
                     marcar_finalizado(sender)
-                    nome = user["nome"] or "jovem"
+                    nome = valor if campo == "nome" else "jovem"
                     mensagem_final = (
                         f"Muito obrigado, {nome}! ✅ Seu cadastro foi finalizado.\n\n"
                         "👋 Eu sou a *Scinti*, sua assistente virtual de carreira!\n\n"
@@ -196,7 +141,6 @@ def whatsapp_webhook():
     return response
 
 # Criação de tabelas deve ocorrer sempre
-criar_tabela()
 criar_tabela_conversas()
 
 if __name__ == "__main__":
