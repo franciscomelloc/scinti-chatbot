@@ -6,9 +6,11 @@ from flask import Flask, request, make_response
 from twilio.twiml.messaging_response import MessagingResponse
 from dotenv import load_dotenv
 from openai import OpenAI
+from db import criar_tabela
 from database import (
     obter_usuario, criar_usuario, atualizar_usuario,
-    marcar_finalizado, apagar_usuario
+    marcar_finalizado, apagar_usuario, salvar_mensagem, 
+    obter_historico, criar_tabela_conversas
 )
 
 
@@ -100,28 +102,30 @@ def apagar_usuario(whatsapp_id):
     conn.commit()
     conn.close()
 
-def gerar_resposta_scinti(pergunta):
-    prompt = f"""
-    Você é Scinti, uma assistente virtual especializada em orientar jovens sobre suas carreiras. 
-    Você só responde perguntas relacionadas a carreira, futuro profissional, cursos, mercado de trabalho, vocação ou caminhos profissionais. 
-    Se a pergunta não for sobre isso, gentilmente diga que só pode ajudar com temas de carreira. 
-    As respostas devem ter até 500 tokens. 
-    Ajude com orientações, mas sempre continue a conversa com mais perguntas
+def gerar_resposta_scinti(pergunta, whatsapp_id):
+    salvar_mensagem(whatsapp_id, "user", pergunta)
 
-    Um jovem perguntou: "{pergunta}"
-    """
+    historico = obter_historico(whatsapp_id)
+    mensagens = [
+        {"role": "system", "content": (
+            "Você é *Scinti*, uma assistente virtual empática e inteligente, especializada em orientar jovens sobre suas carreiras. "
+            "Seu papel é ajudar jovens a refletirem sobre suas aspirações profissionais, cursos, caminhos no mercado de trabalho, vocações e dúvidas sobre o futuro. "
+            "Você não responde a perguntas fora desse escopo. Quando necessário, gentilmente informe que só pode responder sobre temas relacionados a carreira. "
+            "Suas respostas são breves (até 500 tokens), acolhedoras, e sempre incentivam o jovem a pensar mais, trazendo novas perguntas ou reflexões."
+        )}
+    ]
+    mensagens.extend(historico)
 
     resposta = client.chat.completions.create(
         model="gpt-4",
-        messages=[
-            {"role": "system", "content": "Você é Scinti, assistente de carreira empática e inteligente."},
-            {"role": "user", "content": prompt}
-        ],
+        messages=mensagens,
         temperature=0.7,
         max_tokens=500
     )
 
-    return resposta.choices[0].message.content.strip()
+    conteudo = resposta.choices[0].message.content.strip()
+    salvar_mensagem(whatsapp_id, "assistant", conteudo)
+    return conteudo
 
 
 @app.route("/webhook", methods=["POST"])
@@ -192,7 +196,7 @@ def whatsapp_webhook():
     return response
 
 if __name__ == "__main__":
-    from db import criar_tabela
     criar_tabela()
+    criar_tabela_conversas()
     app.run(port=5000)
 

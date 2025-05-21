@@ -45,3 +45,43 @@ def apagar_usuario(whatsapp_id):
     cursor.execute("DELETE FROM usuarios WHERE whatsapp_id = ?", (whatsapp_id,))
     conn.commit()
     conn.close()
+
+def criar_tabela_conversas():
+    conn = sqlite3.connect("chatbot.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS conversas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            whatsapp_id TEXT NOT NULL,
+            role TEXT NOT NULL,  -- 'user' ou 'assistant'
+            content TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+def salvar_mensagem(whatsapp_id, role, content):
+    conn = sqlite3.connect("chatbot.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO conversas (whatsapp_id, role, content) VALUES (?, ?, ?)",
+        (whatsapp_id, role, content)
+    )
+    conn.commit()
+    conn.close()
+
+def obter_historico(whatsapp_id, limite=10):
+    conn = sqlite3.connect("chatbot.db")
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT role, content FROM conversas
+        WHERE whatsapp_id = ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+    """, (whatsapp_id, limite))
+    mensagens = cursor.fetchall()
+    conn.close()
+    return list(reversed([dict(m) for m in mensagens]))  # ordena do mais antigo ao mais recente
+
