@@ -151,7 +151,7 @@ def whatsapp_webhook():
         user = obter_usuario(sender)
 
         if user and user["finalizado"]:
-            resposta_ia = gerar_resposta_scinti(incoming_msg)
+            resposta_ia = gerar_resposta_scinti(incoming_msg, sender)
             enviar_resposta_twilio(sender, resposta_ia)
             return
 
