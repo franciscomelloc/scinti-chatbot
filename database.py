@@ -52,7 +52,7 @@ def atualizar_usuario(whatsapp_id, campo, valor):
 def marcar_finalizado(whatsapp_id):
     conn = conectar()
     cur = conn.cursor()
-    cur.execute("UPDATE usuarios SET finalizado = 1 WHERE whatsapp_id = %s", (whatsapp_id,))
+    cur.execute("UPDATE usuarios SET finalizado = TRUE WHERE whatsapp_id = %s", (whatsapp_id,))
     conn.commit()
     conn.close()
 
