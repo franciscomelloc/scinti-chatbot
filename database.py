@@ -93,12 +93,15 @@ def criar_tabela_conversas():
     conn.commit()
     conn.close()
 
-def salvar_mensagem(whatsapp_id, role, content):
+def salvar_mensagem(whatsapp_id, role, content, fase=None, pergunta_id=None):
     conn = conectar()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO conversas (whatsapp_id, role, content) VALUES (%s, %s, %s)",
-        (whatsapp_id, role, content)
+        """
+        INSERT INTO conversas (whatsapp_id, role, content, fase, pergunta_id)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (whatsapp_id, role, content, fase, pergunta_id)
     )
     conn.commit()
     conn.close()
