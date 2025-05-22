@@ -39,3 +39,6 @@ def processar_resposta_guiada(user, mensagem):
 
     salvar_mensagem(user["whatsapp_id"], "user", mensagem, fase=fase, pergunta_id=proxima["id"])
     return proxima["texto"], fase
+
+# Alias para compatibilidade com app.py
+processar_ajuda_guiada = processar_resposta_guiada
