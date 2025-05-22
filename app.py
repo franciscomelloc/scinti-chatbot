@@ -97,8 +97,8 @@ def whatsapp_webhook():
         user = obter_usuario(sender)
 
         if user and user["finalizado"]:
-            # novo: tenta responder com base na metodologia estruturada
-            resposta_metodologica = processar_ajuda_guiada(sender, incoming_msg)  # novo
+            resposta_metodologica = processar_ajuda_guiada(user, incoming_msg) 
+            
             if resposta_metodologica:  # novo
                 enviar_resposta_twilio(sender, resposta_metodologica)  # novo
                 return  # novo
