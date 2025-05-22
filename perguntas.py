@@ -1,4 +1,6 @@
-PERGUNTAS_GUIADAS = {
+PERGUNTAS_GUIADAS = {}
+
+etapas_raw = {
     "autoconhecimento": {
         "interesses": [
             "O que você gosta de fazer no seu tempo livre?",
@@ -116,3 +118,12 @@ PERGUNTAS_GUIADAS = {
         ]
     }
 }
+
+PERGUNTAS_GUIADAS = {}
+
+for etapa, subetapas in etapas_raw.items():
+    PERGUNTAS_GUIADAS[etapa] = []
+    for subetapa, perguntas in subetapas.items():
+        for idx, texto in enumerate(perguntas, start=1):
+            id_pergunta = f"{subetapa}_{idx}"
+            PERGUNTAS_GUIADAS[etapa].append({"id": id_pergunta, "texto": texto})
