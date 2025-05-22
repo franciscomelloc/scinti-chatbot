@@ -1,44 +1,67 @@
-from perguntas import PERGUNTAS_GUIADAS
+# guided_mode.py (novo com respostas generativas guiadas)
+
 from database import salvar_mensagem, obter_historico, atualizar_usuario
+from openai import OpenAI
+import os
 
-# Verifica a próxima pergunta que ainda não foi respondida na fase atual
-def escolher_proxima_pergunta(fase, respondidas):
-    for pergunta in PERGUNTAS_GUIADAS.get(fase, []):
-        if pergunta["id"] not in respondidas:
-            return pergunta
-    return None
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Retorna a próxima fase do planejamento guiado
-def proxima_fase(fase_atual):
-    fases = list(PERGUNTAS_GUIADAS.keys())
-    if fase_atual not in fases:
-        return fases[0]
-    index = fases.index(fase_atual)
-    if index + 1 < len(fases):
-        return fases[index + 1]
-    return None  # já está na última fase
+# Lista sequencial de intenções pedagógicas
+INTENCOES_GUIADAS = [
+    {"fase": "autoconhecimento", "topico": "interesses", "descricao": "descubra o que o jovem gosta de fazer no tempo livre"},
+    {"fase": "autoconhecimento", "topico": "valores", "descricao": "explore os valores mais importantes para o jovem no trabalho"},
+    {"fase": "autoconhecimento", "topico": "motivacoes", "descricao": "entenda o que motiva o jovem a estudar ou trabalhar"},
+    {"fase": "exploracao", "topico": "curiosidade", "descricao": "investigue que áreas ou carreiras despertam curiosidade"},
+    {"fase": "exploracao", "topico": "realidade", "descricao": "investigue se o jovem conhece as condições do mercado de trabalho"},
+    {"fase": "planejamento", "topico": "metas", "descricao": "ajude o jovem a refletir sobre seus objetivos profissionais de curto prazo"},
+    {"fase": "planejamento", "topico": "organizacao", "descricao": "ajude a identificar o que precisa fazer para atingir suas metas"},
+    {"fase": "acompanhamento", "topico": "checkin", "descricao": "verifique se ele está conseguindo aplicar o plano"},
+    {"fase": "acompanhamento", "topico": "reflexao", "descricao": "convide o jovem a refletir sobre o que aprendeu até agora"}
+]
 
-# Recupera os IDs de perguntas já respondidas na fase atual
-def obter_respostas_por_fase(whatsapp_id, fase):
-    historico = obter_historico(whatsapp_id, limite=50)
-    return [msg["pergunta_id"] for msg in historico if msg.get("fase") == fase and msg["role"] == "user"]
+def proxima_intencao(index_atual):
+    if index_atual + 1 < len(INTENCOES_GUIADAS):
+        return INTENCOES_GUIADAS[index_atual + 1], index_atual + 1
+    return None, index_atual
 
-# Lida com uma resposta do usuário no modo guiado
-def processar_resposta_guiada(user, mensagem):
-    fase = user.get("fase_guiada", "autoconhecimento")
-    respondidas = obter_respostas_por_fase(user["whatsapp_id"], fase)
+def processar_ajuda_guiada(user, mensagem_usuario):
+    whatsapp_id = user["whatsapp_id"]
+    index_atual = int(user.get("intencao_index", 0))
+    intencao = INTENCOES_GUIADAS[index_atual]
 
-    proxima = escolher_proxima_pergunta(fase, respondidas)
-    if not proxima:
-        nova_fase = proxima_fase(fase)
-        if nova_fase:
-            atualizar_usuario(user["whatsapp_id"], "fase_guiada", nova_fase)
-            return f"Ótimo! Agora vamos para a próxima etapa: *{nova_fase}*\n\n{PERGUNTAS_GUIADAS[nova_fase][0]['texto']}", nova_fase
-        else:
-            return "Você completou todas as etapas do planejamento guiado! Se quiser conversar sobre outro assunto de carreira, estou aqui! 😊", None
+    historico = obter_historico(whatsapp_id)
+    mensagens = [
+        {"role": "system", "content": f"""
+            Você é Scinti, uma assistente de carreira empática e inteligente.
+            Seu papel é apoiar jovens em sua jornada de planejamento de carreira.
+            Agora você deve ajudar com a seguinte intenção pedagógica:
+            - Fase: {intencao['fase']}
+            - Objetivo: {intencao['descricao']}
 
-    salvar_mensagem(user["whatsapp_id"], "user", mensagem, fase=fase, pergunta_id=proxima["id"])
-    return proxima["texto"], fase
+            Com base na mensagem anterior do jovem, faça uma resposta que:
+            1. Demonstre escuta e empatia;
+            2. Prossiga com a conversa de forma natural;
+            3. Traga uma nova pergunta que estimule reflexão sobre o tema.
 
-# Alias para compatibilidade com app.py
-processar_ajuda_guiada = processar_resposta_guiada
+            Não faça perguntas diretas copiadas. Escreva como se estivesse dialogando com cuidado e atenção.
+        """}
+    ]
+    mensagens += historico[-10:]  # mensagens recentes
+    mensagens.append({"role": "user", "content": mensagem_usuario})
+
+    resposta = client.chat.completions.create(
+        model="gpt-4",
+        messages=mensagens,
+        temperature=0.7,
+        max_tokens=500
+    )
+
+    conteudo = resposta.choices[0].message.content.strip()
+    salvar_mensagem(whatsapp_id, "user", mensagem_usuario)
+    salvar_mensagem(whatsapp_id, "assistant", conteudo)
+
+    # Atualiza o index para a próxima intenção
+    proxima, novo_index = proxima_intencao(index_atual)
+    atualizar_usuario(whatsapp_id, "intencao_index", novo_index)
+
+    return conteudo

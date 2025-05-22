@@ -13,7 +13,6 @@ from database import (
     obter_historico, criar_tabela_conversas
 )
 
-
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -38,15 +37,14 @@ mapeamentos = {
 def enviar_resposta_twilio(to, mensagem):
     account_sid = os.getenv("TWILIO_ACCOUNT_SID")
     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-    from_number = os.getenv("TWILIO_WHATSAPP_NUMBER")  # Exemplo: "whatsapp:+14155238886"
-    
+    from_number = os.getenv("TWILIO_WHATSAPP_NUMBER")
+
     client = Client(account_sid, auth_token)
     client.messages.create(
         body=mensagem,
         from_=from_number,
         to=to
     )
-
 
 def gerar_resposta_scinti(pergunta, whatsapp_id):
     salvar_mensagem(whatsapp_id, "user", pergunta)
@@ -73,7 +71,6 @@ def gerar_resposta_scinti(pergunta, whatsapp_id):
     salvar_mensagem(whatsapp_id, "assistant", conteudo)
     return conteudo
 
-
 @app.route("/webhook", methods=["POST"])
 def whatsapp_webhook():
     incoming_msg = request.form.get("Body").strip()
@@ -91,21 +88,18 @@ def whatsapp_webhook():
 
         if incoming_msg.lower() == "/status":
             user = obter_usuario(sender)
-            # Como já respondemos ao Twilio, apenas log ou log futuro
             return
 
         user = obter_usuario(sender)
 
         if user and user["finalizado"]:
-            resposta_metodologica = processar_ajuda_guiada(user, incoming_msg) 
-            
+            resposta_metodologica = processar_ajuda_guiada(user, incoming_msg)  # novo
             if resposta_metodologica:  # novo
                 enviar_resposta_twilio(sender, resposta_metodologica)  # novo
                 return  # novo
 
-            # novo: fallback para IA genérica
-            resposta_ia = gerar_resposta_scinti(incoming_msg, sender)  # novo
-            enviar_resposta_twilio(sender, resposta_ia)  # novo
+            resposta_ia = gerar_resposta_scinti(incoming_msg, sender)
+            enviar_resposta_twilio(sender, resposta_ia)
             return
 
         if not user:
@@ -153,4 +147,3 @@ criar_tabela_conversas()
 
 if __name__ == "__main__":
     app.run(port=5000)
-
