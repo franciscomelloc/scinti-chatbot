@@ -6,6 +6,7 @@ from twilio.twiml.messaging_response import MessagingResponse
 from dotenv import load_dotenv
 from openai import OpenAI
 from db import criar_tabela
+from guided_mode import processar_ajuda_guiada  # novo
 from database import (
     obter_usuario, criar_usuario, atualizar_usuario,
     marcar_finalizado, apagar_usuario, salvar_mensagem, 
@@ -96,8 +97,15 @@ def whatsapp_webhook():
         user = obter_usuario(sender)
 
         if user and user["finalizado"]:
-            resposta_ia = gerar_resposta_scinti(incoming_msg, sender)
-            enviar_resposta_twilio(sender, resposta_ia)
+            # novo: tenta responder com base na metodologia estruturada
+            resposta_metodologica = processar_ajuda_guiada(sender, incoming_msg)  # novo
+            if resposta_metodologica:  # novo
+                enviar_resposta_twilio(sender, resposta_metodologica)  # novo
+                return  # novo
+
+            # novo: fallback para IA genérica
+            resposta_ia = gerar_resposta_scinti(incoming_msg, sender)  # novo
+            enviar_resposta_twilio(sender, resposta_ia)  # novo
             return
 
         if not user:
