@@ -1,4 +1,4 @@
-perguntas_por_etapa = {
+PERGUNTAS_GUIADAS = {
     "autoconhecimento": {
         "interesses": [
             "O que você gosta de fazer no seu tempo livre?",
