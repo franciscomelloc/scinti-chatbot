@@ -6,6 +6,7 @@ from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client as TwilioClient
 from dotenv import load_dotenv
 from openai import OpenAI
+import re
 
 # --- módulos do projeto
 # (o db.py não é usado; mantendo só o que de fato é necessário)
@@ -46,6 +47,42 @@ mapeamentos = {
 }
 
 # -----------------------------------------------------------------------------
+# Corrigir número
+# -----------------------------------------------------------------------------
+def normalize_whatsapp_to(raw: str) -> str:
+    """
+    Aceita vários formatos e retorna 'whatsapp:+E164'.
+    Exemplos aceitos:
+      - 'whatsapp:+5537999999999'
+      - 'whatsapp: 5537999999999' (corrige '+')
+      - '+5537999999999' ou '5537999999999' (adiciona 'whatsapp:')
+      - '(37) 9 9999-9999' (remove máscara)
+    Lança ValueError se não conseguir formar E.164.
+    """
+    if not raw:
+      raise ValueError("Número vazio")
+
+    s = raw.strip()
+    # corrige '+' perdido após 'whatsapp: '
+    s = s.replace("whatsapp: +", "whatsapp:+").replace("whatsapp:  ", "whatsapp: ")
+    if s.startswith("whatsapp: ") and not s.startswith("whatsapp:+"):
+        s = s.replace("whatsapp: ", "whatsapp:+", 1)
+
+    # se não vier com prefixo, adiciona
+    if not s.startswith("whatsapp:"):
+        only = re.sub(r"[^\d+]", "", s)  # deixa só + e dígitos
+        s = f"whatsapp:{only}"
+
+    # garante o '+'
+    if not s.startswith("whatsapp:+"):
+        s = s.replace("whatsapp:", "whatsapp:+", 1)
+
+    # validação final: whatsapp:+ e 8–15 dígitos
+    if not re.fullmatch(r"whatsapp:\+\d{8,15}", s):
+        raise ValueError(f"Número inválido para WhatsApp/E.164: {s}")
+    return s
+
+# -----------------------------------------------------------------------------
 # Envio de mensagens (com logs de diagnóstico)
 # -----------------------------------------------------------------------------
 def enviar_resposta_twilio(to, mensagem):
@@ -62,22 +99,25 @@ def enviar_resposta_twilio(to, mensagem):
         return
 
     try:
+        # normaliza o destino para evitar 21211 por formatação (ex.: '+' perdido)
+        to_norm = normalize_whatsapp_to(to)
+    except Exception as e:
+        print("[Twilio] Número 'to' inválido:", to, "| erro:", str(e))
+        return
+
+    try:
         client = TwilioClient(account_sid, auth_token)
-        kwargs = {
-            "body": mensagem,
-            "from_": from_number,
-            "to": to
-        }
+        kwargs = {"body": mensagem, "from_": from_number, "to": to_norm}
         if STATUS_CALLBACK_URL:
             kwargs["status_callback"] = STATUS_CALLBACK_URL
 
         msg = client.messages.create(**kwargs)
-        print("[Twilio] Enviado OK | SID:", msg.sid, "| to:", to, "| from:", from_number)
+        print("[Twilio] Enviado OK | SID:", msg.sid, "| to:", to_norm, "| from:", from_number)
     except TwilioRestException as e:
-        # Erros do Twilio vêm com status/código úteis (ex.: 63005 template, 63016 janela etc.)
         print("[Twilio] ERRO Twilio:", e.status, getattr(e, "code", None), str(e))
     except Exception as e:
         print("[Twilio] ERRO genérico:", str(e))
+
 
 # -----------------------------------------------------------------------------
 # Geração de resposta da IA
@@ -224,32 +264,38 @@ def twilio_status():
 # -----------------------------------------------------------------------------
 @app.get("/_twilio_test")
 def twilio_test():
-    raw = (request.args.get("to") or "").strip()
+    raw = (request.args.get("to") or "").strip()  # aceita whatsapp:+55..., +55..., (37) 9....
     if not raw:
-        return "use /_twilio_test?to=whatsapp:%2B55DDDNXXXXXXXX", 400
+        return "use /_twilio_test?to=whatsapp:+55DDDNXXXXXXXX", 400
 
-    # Normalização: trata "+" virando espaço na query
-    to = raw.replace("whatsapp: ", "whatsapp:+")  # corrige 'whatsapp: 55...'
-    if to.startswith("whatsapp:") and not to.startswith("whatsapp:+"):
-        to = to.replace("whatsapp:", "whatsapp:+", 1)
+    try:
+        to = normalize_whatsapp_to(raw)  # <-- normaliza aqui
+    except Exception as e:
+        return jsonify(ok=False, step="normalize_to", error=str(e)), 400
 
-    # Aceita também só dígitos e monta E.164 BR automaticamente (opcional)
-    if to.isdigit():
-        to = f"whatsapp:+{to}"
-
-    sid  = os.getenv("TWILIO_ACCOUNT_SID")
-    tok  = os.getenv("TWILIO_AUTH_TOKEN")
+    sid = os.getenv("TWILIO_ACCOUNT_SID")
+    tok = os.getenv("TWILIO_AUTH_TOKEN")
     from_ = os.getenv("TWILIO_WHATSAPP_NUMBER")  # sandbox: whatsapp:+14155238886
+
     if not all([sid, tok, from_]):
-        return {"ok": False, "step": "env_check"}, 500
+        return jsonify(ok=False, step="env_check", vars={
+            "TWILIO_ACCOUNT_SID": bool(sid),
+            "TWILIO_AUTH_TOKEN": bool(tok),
+            "TWILIO_WHATSAPP_NUMBER": bool(from_)
+        }), 500
 
     try:
         client = TwilioClient(sid, tok)
-        msg = client.messages.create(body="Teste direto (sandbox).", from_=from_, to=to)
-        return {"ok": True, "sid": msg.sid}
+        kwargs = {"body": "Teste direto (sandbox).", "from_": from_, "to": to}
+        if STATUS_CALLBACK_URL:
+            kwargs["status_callback"] = STATUS_CALLBACK_URL
+        msg = client.messages.create(**kwargs)
+        return jsonify(ok=True, sid=msg.sid)
     except TwilioRestException as e:
-        return {"ok": False, "step": "twilio_create", "status": e.status,
-                "code": getattr(e, "code", None), "error": str(e)}, 400
+        return jsonify(ok=False, step="twilio_create", status=e.status,
+                       code=getattr(e, "code", None), error=str(e)), 400
+    except Exception as e:
+        return jsonify(ok=False, step="generic", error=str(e)), 500
 
 
 # -----------------------------------------------------------------------------
