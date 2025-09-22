@@ -224,34 +224,33 @@ def twilio_status():
 # -----------------------------------------------------------------------------
 @app.get("/_twilio_test")
 def twilio_test():
-    to = request.args.get("to")  # ex.: whatsapp:+55SEUNUMERO
-    if not to:
-        return "use /_twilio_test?to=whatsapp:+55XXXXXXXXXXX", 400
+    raw = (request.args.get("to") or "").strip()
+    if not raw:
+        return "use /_twilio_test?to=whatsapp:%2B55DDDNXXXXXXXX", 400
 
-    sid = os.getenv("TWILIO_ACCOUNT_SID")
-    tok = os.getenv("TWILIO_AUTH_TOKEN")
+    # Normalização: trata "+" virando espaço na query
+    to = raw.replace("whatsapp: ", "whatsapp:+")  # corrige 'whatsapp: 55...'
+    if to.startswith("whatsapp:") and not to.startswith("whatsapp:+"):
+        to = to.replace("whatsapp:", "whatsapp:+", 1)
+
+    # Aceita também só dígitos e monta E.164 BR automaticamente (opcional)
+    if to.isdigit():
+        to = f"whatsapp:+{to}"
+
+    sid  = os.getenv("TWILIO_ACCOUNT_SID")
+    tok  = os.getenv("TWILIO_AUTH_TOKEN")
     from_ = os.getenv("TWILIO_WHATSAPP_NUMBER")  # sandbox: whatsapp:+14155238886
-
     if not all([sid, tok, from_]):
-        return jsonify(ok=False, step="env_check", vars={
-            "TWILIO_ACCOUNT_SID": bool(sid),
-            "TWILIO_AUTH_TOKEN": bool(tok),
-            "TWILIO_WHATSAPP_NUMBER": bool(from_)
-        }), 500
+        return {"ok": False, "step": "env_check"}, 500
 
     try:
         client = TwilioClient(sid, tok)
-        kwargs = {"body": "Teste direto: se você recebeu isto, envio OK.",
-                  "from_": from_, "to": to}
-        if STATUS_CALLBACK_URL:
-            kwargs["status_callback"] = STATUS_CALLBACK_URL
-        msg = client.messages.create(**kwargs)
-        return jsonify(ok=True, sid=msg.sid)
+        msg = client.messages.create(body="Teste direto (sandbox).", from_=from_, to=to)
+        return {"ok": True, "sid": msg.sid}
     except TwilioRestException as e:
-        return jsonify(ok=False, step="twilio_create", status=e.status,
-                       code=getattr(e, "code", None), error=str(e)), 500
-    except Exception as e:
-        return jsonify(ok=False, step="generic", error=str(e)), 500
+        return {"ok": False, "step": "twilio_create", "status": e.status,
+                "code": getattr(e, "code", None), "error": str(e)}, 400
+
 
 # -----------------------------------------------------------------------------
 # Tabelas sempre que subir o app
