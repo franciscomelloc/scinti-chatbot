@@ -14,12 +14,13 @@ def conectar():
         raise ValueError("Erro: uma ou mais variáveis de ambiente do banco de dados não estão definidas.")
 
     return psycopg2.connect(
-        dbname=dbname,
-        user=user,
-        password=password,
-        host=host,
-        port=port,
-        cursor_factory=RealDictCursor
+    dbname=dbname,
+    user=user,
+    password=password,
+    host=host,
+    port=port,
+    cursor_factory=RealDictCursor,
+    sslmode="require"  # importante para Supabase
     )
 
 def obter_usuario(whatsapp_id):
